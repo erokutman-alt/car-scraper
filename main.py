@@ -15,29 +15,34 @@ def scrape():
         return jsonify({'status': 'error', 'message': 'URL gerekli'}), 400
 
     try:
-        # render=true ve render_sdk=true ile JavaScript'in tam yüklenmesini sağlıyoruz
-        proxy_url = f'http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&render=true'
+        # Türkiye lokasyonlu premium residential IP ve JavaScript rendering kullanımı
+        proxy_url = (
+            f'http://api.scraperapi.com?'
+            f'api_key={SCRAPER_API_KEY}&'
+            f'url={target_url}&'
+            f'render=true&'
+            f'country_code=tr&'
+            f'premium=true'
+        )
         
         response = requests.get(proxy_url, timeout=60)
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Alternatif selector'lar ile Fiyat Çekme
+        # Fiyat alma
         fiyat_elem = (
             soup.select_one('.classifiedInfo h3') or 
             soup.select_one('.classified-price-container') or 
-            soup.select_one('.price-value') or
-            soup.find(text=re.compile(r'TL'))
+            soup.select_one('.price-value')
         )
         fiyat = fiyat_elem.text.strip() if fiyat_elem else 'Bulunamadı'
 
-        # Liste Detayları (KM, Yıl, Marka/Model)
+        # Detay listesi (KM, Yıl vb.)
         info_list = {}
-        # Standart liste arama
-        rows = soup.select('.classifiedInfoList li') or soup.select('.classified-props-list li') or soup.select('ul.info-list li')
+        rows = soup.select('.classifiedInfoList li') or soup.select('.classified-props-list li')
         
         for li in rows:
-            label = li.select_one('strong') or li.select_one('b') or li.select_one('.title')
-            value = li.select_one('span') or li.select_one('a') or li.select_one('.value')
+            label = li.select_one('strong') or li.select_one('b')
+            value = li.select_one('span') or li.select_one('a')
             if label and value:
                 key = label.text.strip().replace(':', '')
                 val = value.text.strip()
@@ -46,8 +51,7 @@ def scrape():
         # İlan Açıklaması
         aciklama_elem = (
             soup.select_one('#classifiedDescription') or 
-            soup.select_one('.classifiedDescription') or 
-            soup.select_one('.uiBoxContainer')
+            soup.select_one('.classifiedDescription')
         )
         aciklama = aciklama_elem.text.strip() if aciklama_elem else 'Bulunamadı'
 
@@ -57,7 +61,7 @@ def scrape():
             'km': info_list.get('KM', info_list.get('Km', 'Bulunamadı')),
             'yil': info_list.get('Yıl', info_list.get('Model Yılı', 'Bulunamadı')),
             'marka_model': info_list.get('Model', info_list.get('Seri', 'Bulunamadı')),
-            'aciklama': aciklama[:500] if aciklama != 'Bulunamadı' else aciklama, # Temiz görünüm için ilk 500 karakter
+            'aciklama': aciklama[:500] if aciklama != 'Bulunamadı' else aciklama,
             'tum_detaylar': info_list
         }), 200
 
