@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
+# Hem ana dizine (/) hem de /scrape yoluna gelen istekleri yakalar
 @app.route('/', methods=['GET'])
 @app.route('/scrape', methods=['GET'])
 def scrape():
