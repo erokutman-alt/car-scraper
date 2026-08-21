@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 from bs4 import BeautifulSoup
+import json
 import re
 
 app = Flask(__name__)
@@ -15,44 +16,46 @@ def scrape():
         return jsonify({'status': 'error', 'message': 'URL gerekli'}), 400
 
     try:
-        # Türkiye lokasyonlu premium residential IP ve JavaScript rendering kullanımı
-        proxy_url = (
-            f'http://api.scraperapi.com?'
-            f'api_key={SCRAPER_API_KEY}&'
-            f'url={target_url}&'
-            f'render=true&'
-            f'country_code=tr&'
-            f'premium=true'
-        )
+        # Mobil UA ve Keep-Headers ile doğrudan istek
+        proxy_url = f'http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&keep_headers=true'
         
-        response = requests.get(proxy_url, timeout=60)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'Accept-Language': 'tr-TR,tr;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+
+        response = requests.get(proxy_url, headers=headers, timeout=30)
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Fiyat alma
-        fiyat_elem = (
-            soup.select_one('.classifiedInfo h3') or 
-            soup.select_one('.classified-price-container') or 
-            soup.select_one('.price-value')
-        )
+        # 1. Yöntem: HTML içindeki gömülü JSON-LD verisini yakalama (En Garanti Yöntem)
+        json_ld = soup.find('script', type='application/ld+json')
+        if json_ld and json_ld.string:
+            try:
+                data_json = json.loads(json_ld.string)
+                return jsonify({
+                    'status': 'success',
+                    'fiyat': str(data_json.get('offers', {}).get('price', 'Bulunamadı')) + ' TL',
+                    'marka_model': data_json.get('name', 'Bulunamadı'),
+                    'aciklama': data_json.get('description', 'Bulunamadı'),
+                    'kaynak': 'JSON-LD Data',
+                    'tum_detaylar': data_json
+                }), 200
+            except Exception:
+                pass
+
+        # 2. Yöntem: Klasik HTML Parsing (Yedek Plan)
+        fiyat_elem = soup.select_one('.classifiedInfo h3') or soup.select_one('.price')
         fiyat = fiyat_elem.text.strip() if fiyat_elem else 'Bulunamadı'
 
-        # Detay listesi (KM, Yıl vb.)
         info_list = {}
-        rows = soup.select('.classifiedInfoList li') or soup.select('.classified-props-list li')
-        
-        for li in rows:
-            label = li.select_one('strong') or li.select_one('b')
-            value = li.select_one('span') or li.select_one('a')
+        for li in soup.select('.classifiedInfoList li'):
+            label = li.select_one('strong')
+            value = li.select_one('span')
             if label and value:
-                key = label.text.strip().replace(':', '')
-                val = value.text.strip()
-                info_list[key] = val
+                info_list[label.text.strip().replace(':', '')] = value.text.strip()
 
-        # İlan Açıklaması
-        aciklama_elem = (
-            soup.select_one('#classifiedDescription') or 
-            soup.select_one('.classifiedDescription')
-        )
+        aciklama_elem = soup.select_one('#classifiedDescription')
         aciklama = aciklama_elem.text.strip() if aciklama_elem else 'Bulunamadı'
 
         return jsonify({
