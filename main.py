@@ -1,34 +1,29 @@
 from flask import Flask, request, jsonify
-import cloudscraper
+import requests
 from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
+SCRAPER_API_KEY = 'a54a4eb03063ab0aa96c46f2b5c3def'
+
 @app.route('/', methods=['GET'])
 @app.route('/scrape', methods=['GET'])
 def scrape():
-    url = request.args.get('url')
-    if not url:
+    target_url = request.args.get('url')
+    if not target_url:
         return jsonify({'status': 'error', 'message': 'URL gerekli'}), 400
 
     try:
-        # Cloudflare korumasını aşan istemci
-        scraper = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'mobile': False
-            }
-        )
+        proxy_url = f'http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&render=true'
         
-        response = scraper.get(url, timeout=15)
+        response = requests.get(proxy_url, timeout=30)
         soup = BeautifulSoup(response.text, 'html.parser')
 
         # Fiyat çekme
         fiyat_elem = soup.select_one('.classifiedInfo h3')
         fiyat = fiyat_elem.text.strip() if fiyat_elem else 'Bulunamadı'
 
-        # Liste detayları (KM, Yıl vb.)
+        # Detay listesi (KM, Yıl vb.)
         info_list = {}
         for li in soup.select('.classifiedInfoList li'):
             label = li.select_one('strong')
